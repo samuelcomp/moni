@@ -1,0 +1,64 @@
+Starting system diagnostics...
+
+Checking running processes...
+PHP Processes:
+
+Image Name:   php.exe
+PID:          14516
+Session Name: Console
+Session#:     1
+Mem Usage:    20,916 K
+
+Image Name:   php.exe
+PID:          16820
+Session Name: Console
+Session#:     1
+Mem Usage:    17,104 K
+
+Python Processes:
+INFO: No tasks are running which match the specified criteria.
+
+Checking memory usage...
+
+
+FreePhysicalMemory=2407168
+TotalVisibleMemorySize=12488852
+
+
+
+
+Checking error logs...
+PHP error log found at: C:\xampp\php\logs\php_error_log
+Last 20 lines of PHP error log:
+[18-Mar-2025 11:13:35 UTC] PHP Warning:  Undefined property: stdClass::$device_name in C:\xampp\htdocs\moni\resources\views\devices\realtime.php on line 16
+[18-Mar-2025 11:13:54 UTC] Live capture request for device ID: 1, IP: 192.168.5.34, Port: 4371
+[18-Mar-2025 11:13:54 UTC] Starting live capture for IP: 192.168.5.34, Port: 4371, Timeout: 10
+[18-Mar-2025 11:13:54 UTC] Executing command: python C:\xampp\htdocs\moni/scripts/zk_realtime.py live_capture 192.168.5.34 4371
+[18-Mar-2025 11:13:54 UTC] Live capture process started, waiting for events...
+[18-Mar-2025 11:13:55 UTC] Received output: {"status": "connected", "message": "Successfully connected to device"}
+[18-Mar-2025 11:51:22 UTC] Error in countAttendanceByStatus: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'check_in' in 'where clause'
+[18-Mar-2025 11:51:22 UTC] Error in countAttendanceByStatus: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'check_in' in 'where clause'
+[18-Mar-2025 11:51:22 UTC] Error in countAttendanceByStatus: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'check_in' in 'where clause'
+[18-Mar-2025 11:51:22 UTC] Error in countAttendanceByStatus: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'check_in' in 'where clause'
+[18-Mar-2025 11:51:22 UTC] Error in countAttendanceByStatus: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'check_in' in 'where clause'
+[18-Mar-2025 11:51:22 UTC] Error in countAttendanceByStatus: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'check_in' in 'where clause'
+[18-Mar-2025 11:51:24 UTC] Error in countAttendanceByStatus: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'check_in' in 'where clause'
+[18-Mar-2025 11:51:24 UTC] Error in countAttendanceByStatus: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'check_in' in 'where clause'
+[18-Mar-2025 11:51:24 UTC] Error in countAttendanceByStatus: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'check_in' in 'where clause'
+
+
+Checking browser connections (netstat)...
+  TCP    [::1]:8000             [::]:0                 LISTENING
+
+Checking for hanging HTTP requests...
+
+
+Checking disk space...
+DeviceID  FreeSpace    Size          VolumeName
+C:        16499429376  498535141376
+D:        9872515072   235931717632
+E:        457003008    524283904
+F:        21037424640  262142947328
+
+
+Diagnostics completed.

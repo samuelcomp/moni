@@ -1,4 +1,6 @@
-<div class="container-fluid mt-4">
+<?php require_once __DIR__ . '/../layouts/header.php'; ?>
+
+<div class="container-fluid">
     <h1 class="h3 mb-4 text-gray-800">Real-time Attendance Monitoring</h1>
     
     <div class="row mb-4">
@@ -12,9 +14,16 @@
                         <label for="deviceSelector">Select Device:</label>
                         <select id="deviceSelector" class="form-control">
                             <option value="">-- Select a device --</option>
-                            <?php foreach ($devices as $device): ?>
-                                <option value="<?= $device->id ?>"><?= $device->name ?> (<?= $device->ip_address ?>)</option>
-                            <?php endforeach; ?>
+                            <?php if (!empty($devices)): ?>
+                                <?php foreach ($devices as $device): ?>
+                                    <option value="<?= $device->id ?>">
+                                        <?= htmlspecialchars($device->device_name ?? $device->name ?? 'Device ' . $device->id) ?> 
+                                        (<?= htmlspecialchars($device->ip_address) ?>)
+                                    </option>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <option value="" disabled>No devices available</option>
+                            <?php endif; ?>
                         </select>
                     </div>
                     <div class="form-group">
@@ -92,7 +101,7 @@
                                     <div class="row no-gutters align-items-center">
                                         <div class="col mr-2">
                                             <div class="text-xs font-weight-bold text-info text-uppercase mb-1">Total Employees</div>
-                                            <div class="h5 mb-0 font-weight-bold text-gray-800" id="totalCount">0</div>
+                                            <div class="h5 mb-0 font-weight-bold text-gray-800" id="totalEmployees">0</div>
                                         </div>
                                         <div class="col-auto">
                                             <i class="fas fa-id-card fa-2x text-gray-300"></i>
@@ -107,102 +116,60 @@
         </div>
     </div>
     
-    <div class="row">
-        <div class="col-md-12">
-            <div class="card shadow">
-                <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
-                    <h6 class="m-0 font-weight-bold text-primary">Recent Attendance</h6>
-                    <div class="dropdown no-arrow">
-                        <a class="dropdown-toggle" href="#" role="button" id="dropdownMenuLink" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                            <i class="fas fa-ellipsis-v fa-sm fa-fw text-gray-400"></i>
-                        </a>
-                        <div class="dropdown-menu dropdown-menu-right shadow animated--fade-in" aria-labelledby="dropdownMenuLink">
-                            <div class="dropdown-header">Actions:</div>
-                            <a class="dropdown-item" href="#" id="refreshAttendance"><i class="fas fa-sync fa-sm fa-fw mr-2 text-gray-400"></i>Refresh</a>
-                            <a class="dropdown-item" href="#" id="exportAttendance"><i class="fas fa-download fa-sm fa-fw mr-2 text-gray-400"></i>Export</a>
-                        </div>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table id="attendanceTable" class="table table-bordered table-striped" width="100%" cellspacing="0">
-                            <thead>
-                                <tr>
-                                    <th>Employee</th>
-                                    <th>Device</th>
-                                    <th>Time</th>
-                                    <th>Type</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php if (empty($recentAttendance)): ?>
-                                    <tr>
-                                        <td colspan="5" class="text-center">No attendance records found</td>
-                                    </tr>
-                                <?php else: ?>
-                                    <?php foreach ($recentAttendance as $attendance): ?>
-                                        <tr>
-                                            <td>
-                                                <?php if (isset($attendance->employee_name)): ?>
-                                                    <?= $attendance->employee_name ?>
-                                                <?php else: ?>
-                                                    <?= $attendance->biometric_id ?? 'Unknown' ?>
-                                                <?php endif; ?>
-                                            </td>
-                                            <td>
-                                                <?php if (isset($attendance->device_name)): ?>
-                                                    <?= $attendance->device_name ?>
-                                                <?php else: ?>
-                                                    <?= $attendance->device_id ?? 'Unknown' ?>
-                                                <?php endif; ?>
-                                            </td>
-                                            <td>
-                                                <?php 
-                                                    $timestamp = $attendance->timestamp ?? $attendance->check_time ?? $attendance->datetime ?? $attendance->created_at ?? 'Unknown';
-                                                    echo $timestamp;
-                                                ?>
-                                            </td>
-                                            <td><?= $attendance->type ?? 'Check-in' ?></td>
-                                            <td><?= $attendance->status ?? 'Present' ?></td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                <?php endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+    <div class="card shadow mb-4">
+        <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+            <h6 class="m-0 font-weight-bold text-primary">Recent Attendance</h6>
+            <div class="dropdown no-arrow">
+                <button class="btn btn-sm btn-primary shadow-sm" id="refreshAttendance">
+                    <i class="fas fa-sync fa-sm text-white-50"></i> Refresh
+                </button>
+                <button class="btn btn-sm btn-success shadow-sm" id="exportAttendance">
+                    <i class="fas fa-download fa-sm text-white-50"></i> Export
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered" id="attendanceTable" width="100%" cellspacing="0">
+                    <thead>
+                        <tr>
+                            <th>Employee</th>
+                            <th>Device</th>
+                            <th>Timestamp</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="attendanceTableBody">
+                        <!-- Attendance records will be loaded here -->
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
     
-    <!-- Live Events Log -->
-    <div class="row mt-4">
-        <div class="col-md-12">
-            <div class="card shadow">
-                <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary">Live Events Log</h6>
-                </div>
-                <div class="card-body">
-                    <div id="liveEventsContainer" style="max-height: 300px; overflow-y: auto;">
-                        <table class="table table-sm table-striped mb-0">
-                            <thead>
-                                <tr>
-                                    <th>Time</th>
-                                    <th>User ID</th>
-                                    <th>Event</th>
-                                    <th>Details</th>
-                                </tr>
-                            </thead>
-                            <tbody id="liveEventsBody">
-                                <!-- Live events will be added here -->
-                                <tr>
-                                    <td colspan="4" class="text-center">No events yet. Start live capture to see events.</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+    <div class="card shadow mb-4">
+        <div class="card-header py-3">
+            <h6 class="m-0 font-weight-bold text-primary">Event Log</h6>
+        </div>
+        <div class="card-body">
+            <div id="syncLogContainer" style="max-height: 300px; overflow-y: auto;">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Status</th>
+                            <th>Message</th>
+                        </tr>
+                    </thead>
+                    <tbody id="syncLogBody">
+                        <tr>
+                            <td><?= date('H:i:s') ?></td>
+                            <td><span class="badge badge-info">System</span></td>
+                            <td>Ready to capture attendance events.</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
@@ -210,246 +177,301 @@
 
 <script>
 $(document).ready(function() {
-    // Initialize DataTable
-    var attendanceTable = $('#attendanceTable').DataTable({
-        "order": [[2, "desc"]],
-        "pageLength": 10,
-        "language": {
-            "emptyTable": "No attendance records found"
+    console.log('Realtime page loaded');
+    
+    // Debug info for device list
+    var deviceCount = $('#deviceSelector option').length - 1; // Subtract the placeholder option
+    console.log('Loaded ' + deviceCount + ' devices');
+    $('#deviceSelector option').each(function() {
+        console.log('Device option: ' + $(this).text() + ', value: ' + $(this).val());
+    });
+    
+    // Initialize variables
+    var pollingInterval = null;
+    var captureId = null;
+    var latestTimestamp = null;
+    var consecutiveErrors = 0;
+    var maxConsecutiveErrors = 5;
+    
+    // Enable the start button only when a device is selected
+    $('#deviceSelector').on('change', function() {
+        console.log('Device selected: ' + $(this).val());
+        if ($(this).val()) {
+            $('#startLiveCapture').prop('disabled', false);
+        } else {
+            $('#startLiveCapture').prop('disabled', true);
         }
     });
     
-    // Variables for live capture
-    var liveCapturePollId = null;
-    var isCapturing = false;
-    var captureStartTime = null;
-    var eventCount = 0;
+    // Initially disable start button if no device is selected
+    if (!$('#deviceSelector').val()) {
+        $('#startLiveCapture').prop('disabled', true);
+    }
     
-    // Function to start live capture
-    function startLiveCapture() {
+    // Start live capture
+    $('#startLiveCapture').on('click', function() {
         var deviceId = $('#deviceSelector').val();
         var captureTime = $('#captureTime').val();
         
         if (!deviceId) {
-            showAlert('danger', 'Please select a device');
+            showAlert('danger', 'Please select a device first.');
             return;
         }
         
-        console.log('Starting live capture for device ID:', deviceId, 'for', captureTime, 'seconds');
+        console.log('Starting live capture for device: ' + deviceId + ', duration: ' + captureTime);
         
-        // Show the stop button and hide the start button
-        $('#startLiveCapture').hide();
-        $('#stopLiveCapture').show();
+        // Show loading indicator
+        $('#liveStatus').html('<div class="spinner-border text-primary" role="status"><span class="sr-only">Loading...</span></div> Connecting to device...');
         
-        // Show a loading message
-        showAlert('info', 'Connecting to device...');
+        // Disable form controls
+        $('#deviceSelector, #captureTime, #startLiveCapture').prop('disabled', true);
         
-        // Start the countdown
-        var remainingTime = parseInt(captureTime);
-        var countdownInterval = setInterval(function() {
-            remainingTime--;
-            updateStatusWithCountdown(remainingTime);
-            
-            if (remainingTime <= 0) {
-                clearInterval(countdownInterval);
-                stopLiveCapture();
-            }
-        }, 1000);
+        // Start monitoring
+        startMonitoring(deviceId, captureTime);
+    });
+    
+    // Stop live capture
+    $('#stopLiveCapture').on('click', function() {
+        stopMonitoring();
+    });
+    
+    // Function to start monitoring
+    function startMonitoring(deviceId, duration) {
+        // Add event log
+        addEventLog('System', 'info', 'Starting live capture for device ID: ' + deviceId);
         
-        // Store the interval ID for later
-        window.countdownInterval = countdownInterval;
-        
-        // Make the AJAX request to start live capture
+        // Start the capture
         $.ajax({
-            url: '/devices/realtime?live=1&device_id=' + deviceId,
-            type: 'GET',
+            url: '/devices/start-live-capture',
+            type: 'POST',
+            data: {
+                device_id: deviceId,
+                duration: duration
+            },
             dataType: 'json',
             success: function(response) {
-                console.log('Live capture response:', response);
+                console.log('Start live capture response:', response);
                 
-                if (!response.success) {
-                    showAlert('danger', 'Error: ' + response.message);
-                    stopLiveCapture();
-                    return;
+                if (response.success) {
+                    captureId = response.capture_id;
+                    
+                    // Update UI
+                    $('#liveStatus').html('<div class="alert alert-success">Live capture started. Monitoring for attendance events...</div>');
+                    $('#startLiveCapture').hide();
+                    $('#stopLiveCapture').show();
+                    
+                    // Add event log
+                    addEventLog('System', 'success', 'Live capture started successfully. Capture ID: ' + captureId);
+                    
+                    // Start polling for events
+                    pollingInterval = setInterval(function() {
+                        pollForEvents(deviceId);
+                    }, 3000); // Poll every 3 seconds
+                    
+                    // Set timeout to stop monitoring after the specified duration
+                    setTimeout(function() {
+                        if (pollingInterval) {
+                            stopMonitoring();
+                        }
+                    }, duration * 1000);
+                } else {
+                    // Update UI
+                    $('#liveStatus').html('<div class="alert alert-danger">Failed to start live capture: ' + response.message + '</div>');
+                    
+                    // Re-enable form controls
+                    $('#deviceSelector, #captureTime, #startLiveCapture').prop('disabled', false);
+                    
+                    // Add event log
+                    addEventLog('System', 'error', 'Failed to start live capture: ' + response.message);
                 }
-                
-                // Start polling for events
-                startEventPolling(deviceId);
             },
             error: function(xhr, status, error) {
                 console.error('Error starting live capture:', error);
-                console.error('Response:', xhr.responseText);
-                showAlert('danger', 'Error starting live capture: ' + error);
-                stopLiveCapture();
+                
+                // Update UI
+                $('#liveStatus').html('<div class="alert alert-danger">Error starting live capture: ' + error + '</div>');
+                
+                // Re-enable form controls
+                $('#deviceSelector, #captureTime, #startLiveCapture').prop('disabled', false);
+                
+                // Add event log
+                addEventLog('System', 'error', 'Error starting live capture: ' + error);
             }
         });
     }
     
-    // Function to stop live capture
-    function stopLiveCapture() {
-        console.log('Stopping live capture');
-        
-        // Clear the countdown interval
-        if (window.countdownInterval) {
-            clearInterval(countdownInterval);
+    // Function to stop monitoring
+    function stopMonitoring() {
+        // Clear polling interval
+        if (pollingInterval) {
+            clearInterval(pollingInterval);
+            pollingInterval = null;
         }
         
-        // Clear the polling interval
-        if (window.pollingInterval) {
-            clearInterval(window.pollingInterval);
-        }
-        
-        // Show the start button and hide the stop button
+        // Update UI
+        $('#liveStatus').html('<div class="alert alert-info">Live capture stopped.</div>');
         $('#stopLiveCapture').hide();
         $('#startLiveCapture').show();
         
-        // Show a stopped message
-        showAlert('warning', 'Live capture stopped');
-    }
-    
-    // Function to start polling for events
-    function startEventPolling(deviceId) {
-        console.log('Starting event polling for device ID:', deviceId);
+        // Re-enable form controls
+        $('#deviceSelector, #captureTime, #startLiveCapture').prop('disabled', false);
         
-        // Add initial log entry
-        addEventLog('System', 'info', 'Started monitoring attendance events');
+        // Add event log
+        addEventLog('System', 'info', 'Live capture stopped.');
         
-        // Set up polling interval
-        var pollingInterval = setInterval(function() {
+        // If we have a capture ID, stop it on the server
+        if (captureId) {
             $.ajax({
-                url: '/devices/realtime?live=1&poll=1&device_id=' + deviceId,
-                type: 'GET',
+                url: '/devices/stop-live-capture',
+                type: 'POST',
+                data: {
+                    capture_id: captureId
+                },
                 dataType: 'json',
                 success: function(response) {
-                    console.log('Polling response:', response);
+                    console.log('Stop live capture response:', response);
                     
-                    if (response.events && response.events.length > 0) {
-                        // Process each event
-                        response.events.forEach(function(event) {
-                            processEvent(event);
-                        });
-                    }
-                    
-                    // Update summary if available
-                    if (response.summary) {
-                        updateAttendanceSummary(response.summary);
+                    if (response.success) {
+                        // Add event log
+                        addEventLog('System', 'success', 'Live capture stopped successfully.');
+                    } else {
+                        // Add event log
+                        addEventLog('System', 'warning', 'Failed to stop live capture: ' + response.message);
                     }
                 },
                 error: function(xhr, status, error) {
-                    console.error('Error polling for events:', error);
-                    console.error('Response:', xhr.responseText);
-                    addEventLog('System', 'error', 'Error polling for events: ' + error);
+                    console.error('Error stopping live capture:', error);
+                    
+                    // Add event log
+                    addEventLog('System', 'error', 'Error stopping live capture: ' + error);
                 }
             });
-        }, 2000); // Poll every 2 seconds
-        
-        // Store the interval ID for later
-        window.pollingInterval = pollingInterval;
+        }
     }
     
-    // Function to process events
-    function processEvents(events) {
-        events.forEach(function(event) {
-            eventCount++;
-            
-            // Add to the events log
-            var eventType = event.status || 'check-in';
-            var details = 'Time: ' + event.timestamp;
-            if (event.employee_name) {
-                details += ', Employee: ' + event.employee_name;
+    // Function to poll for events
+    function pollForEvents(deviceId) {
+        $.ajax({
+            url: '/devices/monitor-device',
+            type: 'GET',
+            data: {
+                device_id: deviceId
+            },
+            dataType: 'json',
+            timeout: 10000, // 10 second timeout
+            success: function(response) {
+                console.log('Poll response:', response);
+                
+                if (response.success) {
+                    // Process any new events
+                    if (response.events && response.events.length > 0) {
+                        // Play notification sound
+                        playNotificationSound();
+                        
+                        // Add events to the log
+                        $.each(response.events, function(index, event) {
+                            var eventType = event.type || 'check-in';
+                            var employeeName = event.employee_name || 'Unknown';
+                            var timestamp = event.timestamp || new Date().toISOString();
+                            
+                            addEventLog('Device', 'info', employeeName + ' ' + eventType + ' at ' + formatTimestamp(timestamp));
+                        });
+                        
+                        // Refresh the attendance table
+                        refreshAttendanceTable();
+                    }
+                } else {
+                    console.log('Error in poll response:', response.message);
+                }
+            },
+            error: function(xhr, status, error) {
+                console.log('Error polling for events:', status);
+                console.log('Status:', status);
+                console.log('Response:', error);
+                
+                // Don't show error for timeout - this is expected behavior
+                if (status !== 'timeout') {
+                    addEventLog('System', 'error', 'Error polling for events: ' + error);
+                }
             }
-            
-            addEventLog(event.uid, eventType, details);
-            
-            // Refresh the attendance table
-            refreshAttendanceTable();
         });
     }
     
-    // Function to add an event log entry
-    function addEventLog(userId, eventType, details) {
-        var now = new Date();
-        var timeString = now.toLocaleTimeString();
+    // Function to process a record
+    function processRecord(record) {
+        console.log('Processing record:', record);
         
-        var eventClass = '';
-        if (eventType.toLowerCase() === 'error') {
-            eventClass = 'table-danger';
-        } else if (eventType.toLowerCase() === 'warning') {
-            eventClass = 'table-warning';
-        } else if (eventType.toLowerCase() === 'check-in') {
-            eventClass = 'table-success';
-        } else if (eventType.toLowerCase() === 'check-out') {
-            eventClass = 'table-info';
-        }
+        // Add to attendance table
+        var employeeName = record.employee_name || 'Unknown';
+        var deviceName = record.device_name || 'Unknown';
+        var timestamp = record.timestamp || new Date().toISOString();
+        var type = record.type || 'check-in';
+        var status = record.status || 'present';
         
-        var logEntry = '<tr class="' + eventClass + '">' +
-            '<td>' + timeString + '</td>' +
-            '<td>' + userId + '</td>' +
-            '<td>' + eventType + '</td>' +
-            '<td>' + details + '</td>' +
+        var row = '<tr>' +
+            '<td>' + employeeName + '</td>' +
+            '<td>' + deviceName + '</td>' +
+            '<td>' + formatTimestamp(timestamp) + '</td>' +
+            '<td>' + capitalizeFirstLetter(type) + '</td>' +
+            '<td>' + getStatusBadge(status) + '</td>' +
             '</tr>';
         
-        // If this is the first real entry, clear the "no events" message
-        if ($('#liveEventsBody tr').length === 1 && 
-            $('#liveEventsBody tr td').length === 1 && 
-            $('#liveEventsBody tr td').text().includes('No events yet')) {
-            $('#liveEventsBody').empty();
-        }
+        $('#attendanceTableBody').prepend(row);
         
-        // Add the new entry at the top
-        $('#liveEventsBody').prepend(logEntry);
-    }
-    
-    // Function to update status with countdown
-    function updateStatusWithCountdown(seconds) {
-        var minutes = Math.floor(seconds / 60);
-        var remainingSeconds = seconds % 60;
-        var timeString = minutes + ':' + (remainingSeconds < 10 ? '0' : '') + remainingSeconds;
+        // Add event log
+        addEventLog('Attendance', 'success', employeeName + ' ' + type + ' at ' + formatTimestamp(timestamp));
         
-        showAlert('info', 'Live capture in progress. Time remaining: ' + timeString);
+        // Play notification sound
+        playNotificationSound();
     }
     
-    // Function to show an alert
-    function showAlert(type, message) {
-        $('#liveStatus').html('<div class="alert alert-' + type + '">' + message + '</div>');
-    }
-    
-    // Function to refresh the attendance table
+    // Function to refresh attendance table
     function refreshAttendanceTable() {
         $.ajax({
-            url: '/devices/get_recent_attendance',
+            url: '/devices/get-today-attendance',
             type: 'GET',
             dataType: 'json',
             success: function(response) {
+                console.log('Refresh attendance response:', response);
+                
                 if (response.success) {
                     // Clear the table
-                    attendanceTable.clear();
+                    $('#attendanceTableBody').empty();
                     
-                    // Add new data
-                    response.attendance.forEach(function(item) {
-                        var employeeName = item.employee_name || item.biometric_id || 'Unknown';
-                        var deviceName = item.device_name || item.device_id || 'Unknown';
-                        var timestamp = item.timestamp || item.check_time || item.datetime || item.created_at || 'Unknown';
-                        var type = item.type || 'Check-in';
-                        var status = item.status || 'Present';
-                        
-                        attendanceTable.row.add([
-                            employeeName,
-                            deviceName,
-                            timestamp,
-                            type,
-                            status
-                        ]);
-                    });
-                    
-                    // Redraw the table
-                    attendanceTable.draw();
+                    // Add records
+                    if (response.records && response.records.length > 0) {
+                        $.each(response.records, function(index, record) {
+                            var employeeName = record.employee_name || 'Unknown';
+                            var deviceName = record.device_name || 'Unknown';
+                            var timestamp = record.timestamp || '';
+                            var type = record.type || 'check-in';
+                            var status = record.status || 'present';
+                            
+                            var row = '<tr>' +
+                                '<td>' + employeeName + '</td>' +
+                                '<td>' + deviceName + '</td>' +
+                                '<td>' + formatTimestamp(timestamp) + '</td>' +
+                                '<td>' + capitalizeFirstLetter(type) + '</td>' +
+                                '<td>' + getStatusBadge(status) + '</td>' +
+                                '</tr>';
+                            
+                            $('#attendanceTableBody').append(row);
+                        });
+                    } else {
+                        $('#attendanceTableBody').html('<tr><td colspan="5" class="text-center">No data available in table</td></tr>');
+                    }
                     
                     // Update summary if available
                     if (response.summary) {
                         updateAttendanceSummary(response.summary);
                     }
+                } else {
+                    showAlert('danger', 'Error refreshing attendance: ' + response.message);
                 }
+            },
+            error: function(xhr, status, error) {
+                console.error('Error refreshing attendance:', error);
+                showAlert('danger', 'Error refreshing attendance: ' + error);
             }
         });
     }
@@ -459,18 +481,79 @@ $(document).ready(function() {
         $('#presentCount').text(summary.present || 0);
         $('#absentCount').text(summary.absent || 0);
         $('#lateCount').text(summary.late || 0);
-        $('#totalCount').text(summary.total || 0);
+        $('#totalEmployees').text(summary.total || 0);
     }
     
-    // Handle start button click
-    $('#startLiveCapture').click(function() {
-        startLiveCapture();
-    });
+    // Function to add event log
+    function addEventLog(source, type, message) {
+        var now = new Date();
+        var timeString = now.toLocaleTimeString();
+        
+        var statusBadge = '<span class="badge badge-' + type + '">' + source + '</span>';
+        
+        var logEntry = '<tr>' +
+            '<td>' + timeString + '</td>' +
+            '<td>' + statusBadge + '</td>' +
+            '<td>' + message + '</td>' +
+            '</tr>';
+        
+        $('#syncLogBody').prepend(logEntry);
+        
+        // Scroll to top of log container
+        $('#syncLogContainer').scrollTop(0);
+    }
     
-    // Handle stop button click
-    $('#stopLiveCapture').click(function() {
-        stopLiveCapture();
-    });
+    // Helper functions
+    function formatTimestamp(timestamp) {
+        if (!timestamp) return '';
+        
+        var date = new Date(timestamp);
+        return date.toLocaleString();
+    }
+    
+    function capitalizeFirstLetter(string) {
+        return string.charAt(0).toUpperCase() + string.slice(1);
+    }
+    
+    function getStatusBadge(status) {
+        var badgeClass = 'secondary';
+        
+        switch (status.toLowerCase()) {
+            case 'present':
+                badgeClass = 'success';
+                break;
+            case 'absent':
+                badgeClass = 'danger';
+                break;
+            case 'late':
+                badgeClass = 'warning';
+                break;
+        }
+        
+        return '<span class="badge badge-' + badgeClass + '">' + capitalizeFirstLetter(status) + '</span>';
+    }
+    
+    function showAlert(type, message) {
+        var alertHtml = '<div class="alert alert-' + type + ' alert-dismissible fade show" role="alert">' +
+            message +
+            '<button type="button" class="close" data-dismiss="alert" aria-label="Close">' +
+            '<span aria-hidden="true">&times;</span>' +
+            '</button>' +
+            '</div>';
+        
+        $('#liveStatus').html(alertHtml);
+    }
+    
+    function playNotificationSound() {
+        // Create an audio element
+        var audio = new Audio('/assets/sounds/notification.mp3');
+        audio.play().catch(function(error) {
+            console.log('Error playing notification sound:', error);
+        });
+    }
+    
+    // Initialize the page
+    refreshAttendanceTable();
     
     // Handle refresh button click
     $('#refreshAttendance').click(function(e) {
@@ -481,11 +564,50 @@ $(document).ready(function() {
     // Handle export button click
     $('#exportAttendance').click(function(e) {
         e.preventDefault();
-        // Implement export functionality here
-        alert('Export functionality will be implemented soon.');
+        
+        // Get the current date for the filename
+        var today = new Date();
+        var dateString = today.getFullYear() + '-' + 
+                        ('0' + (today.getMonth() + 1)).slice(-2) + '-' + 
+                        ('0' + today.getDate()).slice(-2);
+        
+        // Export attendance data to CSV
+        $.ajax({
+            url: '/devices/export-attendance?date=' + dateString,
+            type: 'GET',
+            success: function(response) {
+                if (response.success) {
+                    // Create a download link
+                    var downloadLink = document.createElement('a');
+                    downloadLink.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(response.csv);
+                    downloadLink.download = 'attendance_' + dateString + '.csv';
+                    
+                    // Append to the document, click it, and remove it
+                    document.body.appendChild(downloadLink);
+                    downloadLink.click();
+                    document.body.removeChild(downloadLink);
+                    
+                    addEventLog('System', 'success', 'Attendance data exported successfully');
+                } else {
+                    showAlert('danger', 'Error exporting data: ' + response.message);
+                    addEventLog('System', 'error', 'Failed to export attendance data: ' + response.message);
+                }
+            },
+            error: function(xhr, status, error) {
+                console.error('Error exporting attendance data:', error);
+                showAlert('danger', 'Error exporting data: ' + error);
+                addEventLog('System', 'error', 'Failed to export attendance data: ' + error);
+            }
+        });
     });
     
-    // Initialize - load attendance data and summary
-    refreshAttendanceTable();
+    // Handle window unload event to stop monitoring when the page is closed
+    $(window).on('beforeunload', function() {
+        if (pollingInterval) {
+            stopMonitoring();
+        }
+    });
 });
-</script> 
+</script>
+
+<?php require_once __DIR__ . '/../layouts/footer.php'; ?> 

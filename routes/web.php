@@ -41,6 +41,14 @@ Router::get('/devices/realtime-data', [DeviceController::class, 'getRealtimeData
 Router::get('/devices/get_recent_attendance', [DeviceController::class, 'getRecentAttendance']);
 Router::post('/devices/sync-by-date/{id}', [DeviceController::class, 'syncByDate']);
 Router::get('/devices/stop-sync/{id}', [DeviceController::class, 'stopSync']);
+Router::get('/devices/debug-database', [DeviceController::class, 'debugDatabase']);
+Router::post('/devices/start-live-capture', [DeviceController::class, 'startLiveCapture']);
+Router::post('/devices/stop-live-capture', [DeviceController::class, 'stopLiveCapture']);
+Router::get('/devices/monitor-device', [DeviceController::class, 'monitorDevice']);
+Router::get('/devices/get-attendance', [DeviceController::class, 'getAttendance']);
+Router::get('/devices/get-today-attendance', [DeviceController::class, 'getTodayAttendance']);
+Router::get('/devices/get-attendance-summary', [DeviceController::class, 'getAttendanceSummary']);
+Router::get('/devices/export-attendance', [DeviceController::class, 'exportAttendance']);
 
 // Attendance routes
 Router::get('/attendance', [AttendanceController::class, 'index']);

@@ -2,21 +2,24 @@
 
 namespace App\Controllers;
 
-use App\Models\Device;
-use App\Models\Attendance;
+use App\Models\DeviceModel;
+use App\Models\AttendanceModel;
+use App\Models\EmployeeModel;
 use App\Helpers\Session;
 use App\Helpers\Validator;
-use App\Helpers\ZKTeco;
 use App\Helpers\PyZK;
+use PDO; // Add this to import PDO from global namespace
 
 class DeviceController {
     private $deviceModel;
     private $attendanceModel;
+    private $employeeModel;
     private $db;
     
     public function __construct() {
-        $this->deviceModel = new Device();
-        $this->attendanceModel = new Attendance();
+        $this->deviceModel = new DeviceModel();
+        $this->attendanceModel = new AttendanceModel();
+        $this->employeeModel = new EmployeeModel();
         $this->db = \App\Config\Database::getInstance()->getConnection();
     }
     
@@ -55,6 +58,8 @@ class DeviceController {
             exit;
         }
         
+        $errors = [];
+        
         require_once __DIR__ . '/../../resources/views/devices/create.php';
     }
     
@@ -73,45 +78,78 @@ class DeviceController {
             exit;
         }
         
-        // Validate input
-        $validator = new Validator($_POST);
-        $validator->required(['device_name', 'device_type', 'ip_address', 'port']);
+        $errors = [];
         
-        if (!$validator->isValid()) {
-            $errors = $validator->getErrors();
-            $errorMessage = implode(', ', $errors);
-            header('Location: /devices/create?error=' . urlencode($errorMessage));
-            exit;
-        }
-        
-        // Test connection if requested
-        if (isset($_POST['test_connection']) && $_POST['test_connection'] == 1) {
-            $result = ZKTeco::connect($_POST['ip_address'], $_POST['port']);
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $deviceName = trim($_POST['device_name'] ?? '');
+            $ipAddress = trim($_POST['ip_address'] ?? '');
+            $port = (int)($_POST['port'] ?? 4370);
+            $status = isset($_POST['status']) ? 1 : 0;
+            $location = trim($_POST['location'] ?? '');
+            $deviceType = trim($_POST['device_type'] ?? 'zkteco');
+
+            $errors = [];
+
+            if (empty($deviceName)) {
+                $errors[] = 'Device name is required';
+            }
+
+            if (empty($ipAddress) || !filter_var($ipAddress, FILTER_VALIDATE_IP)) {
+                $errors[] = 'Valid IP address is required';
+            }
+
+            if ($port <= 0 || $port > 65535) {
+                $errors[] = 'Valid port number is required';
+            }
+
+            if (empty($errors)) {
+                // Create device without testing connection for now
+                try {
+                    // Define device data
+                    $deviceData = [
+                        'name' => $deviceName,  // Use 'name' if device_name doesn't exist
+                        'device_name' => $deviceName,
+                        'ip_address' => $ipAddress,
+                        'port' => $port,
+                        'status' => $status,
+                        'location' => $location,
+                        'device_type' => $deviceType,
+                        'created_at' => date('Y-m-d H:i:s'),
+                        'updated_at' => date('Y-m-d H:i:s')
+                    ];
+
+                    // Remove fields that don't exist in the table
+                    $tableCols = $this->db->query("SHOW COLUMNS FROM devices")->fetchAll(\PDO::FETCH_COLUMN);
+                    foreach (array_keys($deviceData) as $key) {
+                        if (!in_array($key, $tableCols)) {
+                            unset($deviceData[$key]);
+                        }
+                    }
+
+                    $deviceId = $this->deviceModel->create($deviceData);
+
+                    if ($deviceId) {
+                        error_log("Device added successfully with ID: $deviceId");
+                        header('Location: /devices?success=' . urlencode('Device added successfully'));
+                        exit;
+                    } else {
+                        error_log("Failed to add device to database");
+                        $errors[] = 'Failed to add device to database';
+                    }
+                } catch (\Exception $e) {
+                    error_log("Exception adding device: " . $e->getMessage());
+                    $errors[] = 'Error adding device: ' . $e->getMessage();
+                }
+            }
             
-            if (!$result['success']) {
-                header('Location: /devices/create?error=' . urlencode('Connection test failed: ' . $result['message']));
+            // If we have errors, display them
+            if (!empty($errors)) {
+                require_once __DIR__ . '/../../resources/views/devices/create.php';
                 exit;
             }
-        }
-        
-        // Create device
-        $data = [
-            'device_name' => $_POST['device_name'],
-            'device_type' => $_POST['device_type'],
-            'ip_address' => $_POST['ip_address'],
-            'port' => $_POST['port'],
-            'device_id' => $_POST['device_id'] ?? null,
-            'location' => $_POST['location'] ?? null,
-            'status' => $_POST['status'] ?? 'active',
-            'notes' => $_POST['notes'] ?? null
-        ];
-        
-        $result = $this->deviceModel->create($data);
-        
-        if ($result) {
-            header('Location: /devices?success=' . urlencode('Device created successfully'));
         } else {
-            header('Location: /devices/create?error=' . urlencode('Failed to create device'));
+            header('Location: /devices/create');
+            exit;
         }
     }
     
@@ -628,135 +666,27 @@ class DeviceController {
         ];
     }
     
+    /**
+     * Show real-time monitoring page
+     */
     public function realtime() {
         // Check if user is logged in
         if (!Session::isLoggedIn()) {
-            if (isset($_GET['live'])) {
-                echo json_encode([
-                    'success' => false,
-                    'message' => 'You must be logged in to access this page'
-                ]);
-                exit;
-            }
             header('Location: /login');
             exit;
         }
         
-        // Get all active devices
-        $devices = $this->deviceModel->getActiveDevices();
+        // Get all devices (not just active ones to ensure we have devices to show)
+        $devices = $this->deviceModel->getAllDevices();
         
-        // Get recent attendance
-        $recentAttendance = $this->attendanceModel->getRecentAttendance(20);
-        
-        // Check if this is an AJAX request for real-time updates
-        if (isset($_GET['live']) && $_GET['live'] == '1') {
-            // Get the device ID
-            $deviceId = isset($_GET['device_id']) ? $_GET['device_id'] : null;
-            
-            if (!$deviceId) {
-                echo json_encode([
-                    'success' => false,
-                    'message' => 'Device ID is required'
-                ]);
-                exit;
-            }
-            
-            // Get the device
-            $device = $this->deviceModel->getDeviceById($deviceId);
-            
-            if (!$device) {
-                echo json_encode([
-                    'success' => false,
-                    'message' => 'Device not found'
-                ]);
-                exit;
-            }
-            
-            // Log the request
-            error_log("Live capture request for device ID: {$deviceId}, IP: {$device->ip_address}, Port: {$device->port}");
-            
-            // Check if this is a polling request
-            $isPoll = isset($_GET['poll']) && $_GET['poll'] == '1';
-            
-            try {
-                // If this is the initial request, start the live capture
-                if (!$isPoll) {
-                    // Update device status to "monitoring"
-                    $this->deviceModel->updateStatus($deviceId, 'monitoring');
-                    
-                    // Start the live capture
-                    $result = PyZK::liveCapture(
-                        $device->ip_address, 
-                        $device->port, 
-                        10, // Short timeout for initial connection
-                        function($event) use ($device) {
-                            // Process the event
-                            error_log("Event received: " . json_encode($event));
-                            $this->processAttendanceEvent($device, $event);
-                        }
-                    );
-                    
-                    error_log("Live capture result: " . json_encode($result));
-                } else {
-                    // For polling requests, use a shorter timeout
-                    $result = PyZK::liveCapture(
-                        $device->ip_address, 
-                        $device->port, 
-                        5, // Short timeout for polling
-                        function($event) use ($device) {
-                            // Process the event
-                            error_log("Event received from polling: " . json_encode($event));
-                            $this->processAttendanceEvent($device, $event);
-                        }
-                    );
-                    
-                    error_log("Polling result: " . json_encode($result));
-                }
-                
-                // Get today's summary
-                $today = date('Y-m-d');
-                $summary = $this->attendanceModel->getAttendanceSummary($today);
-                
-                // Return the result
-                echo json_encode([
-                    'success' => $result['success'],
-                    'message' => $result['message'],
-                    'events' => $result['events'] ?? [],
-                    'summary' => [
-                        'present' => $summary->present ?? 0,
-                        'absent' => ($summary->total_employees ?? 0) - ($summary->present ?? 0),
-                        'late' => $summary->late ?? 0,
-                        'total' => $summary->total_employees ?? 0
-                    ]
-                ]);
-            } catch (\Exception $e) {
-                error_log("Error in live capture: " . $e->getMessage());
-                echo json_encode([
-                    'success' => false,
-                    'message' => 'Error: ' . $e->getMessage()
-                ]);
-            }
-            exit;
+        // Debug information
+        error_log("Loading realtime page with " . count($devices) . " devices");
+        foreach ($devices as $device) {
+            error_log("Device: ID=" . $device->id . ", Name=" . ($device->device_name ?? $device->name ?? 'No Name') . ", IP=" . $device->ip_address);
         }
         
-        // Render the view
-        $data = [
-            'title' => 'Real-time Attendance',
-            'devices' => $devices,
-            'recentAttendance' => $recentAttendance
-        ];
-        
-        // Define the root path
-        $appRoot = dirname(dirname(__DIR__));
-        
-        // Include the header
-        require_once $appRoot . '/resources/views/layouts/header.php';
-        
-        // Include the realtime view
-        require_once $appRoot . '/resources/views/devices/realtime.php';
-        
-        // Include the footer
-        require_once $appRoot . '/resources/views/layouts/footer.php';
+        // Load the view
+        require_once __DIR__ . '/../../resources/views/devices/realtime.php';
     }
     
     /**
@@ -1652,5 +1582,581 @@ PYTHON;
             return true;
         }
         return false;
+    }
+
+    public function fetchAttendance() {
+        // Check if user is logged in
+        if (!Session::isLoggedIn()) {
+            echo "Authentication required";
+            exit;
+        }
+        
+        // Get the device ID
+        $deviceId = isset($_GET['device_id']) ? $_GET['device_id'] : null;
+        
+        if (!$deviceId) {
+            echo "Device ID is required";
+            exit;
+        }
+        
+        // Get the device
+        $device = $this->deviceModel->getDeviceById($deviceId);
+        
+        if (!$device) {
+            echo "Device not found";
+            exit;
+        }
+        
+        // Set headers to prevent caching and allow streaming
+        header('Content-Type: text/plain');
+        header('Cache-Control: no-cache, must-revalidate');
+        header('Expires: 0');
+        
+        // Output buffer flush
+        ob_implicit_flush(true);
+        ob_end_flush();
+        
+        echo "Starting background fetch for device {$device->device_name} ({$device->ip_address})\n";
+        
+        try {
+            // Use a shorter timeout for the initial connection
+            $result = PyZK::getAttendance($device->ip_address, $device->port, false);
+            
+            if (isset($result['records']) && is_array($result['records'])) {
+                echo "Fetched " . count($result['records']) . " attendance records\n";
+                
+                // Process each record
+                foreach ($result['records'] as $record) {
+                    // Create attendance record if it doesn't exist
+                    $exists = $this->attendanceModel->checkAttendanceExists(
+                        $device->id,
+                        $record['user_id'],
+                        $record['timestamp']
+                    );
+                    
+                    if (!$exists) {
+                        $data = [
+                            'device_id' => $device->id,
+                            'biometric_id' => $record['user_id'],
+                            'timestamp' => $record['timestamp'],
+                            'status' => $record['status'] ?? 'check-in',
+                            'punch' => $record['punch'] ?? 0,
+                            'processed' => 0
+                        ];
+                        
+                        $this->attendanceModel->create($data);
+                        echo "Added new attendance record for user {$record['user_id']} at {$record['timestamp']}\n";
+                    }
+                }
+            } else {
+                echo "No records found or error occurred\n";
+            }
+        } catch (\Exception $e) {
+            echo "Error: " . $e->getMessage() . "\n";
+        }
+        
+        echo "Background fetch completed\n";
+        exit;
+    }
+
+    public function monitorDevice() {
+        // Check if user is logged in
+        if (!Session::isLoggedIn()) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+            exit;
+        }
+        
+        header('Content-Type: application/json');
+        
+        try {
+            // Get device ID
+            $deviceId = isset($_GET['device_id']) ? $_GET['device_id'] : null;
+            
+            if (!$deviceId) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Device ID is required'
+                ]);
+                exit;
+            }
+            
+            // Get the device
+            $device = $this->deviceModel->getDeviceById($deviceId);
+            
+            if (!$device) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Device not found'
+                ]);
+                exit;
+            }
+            
+            // Get real-time attendance data
+            $result = PyZK::getRealTimeAttendance($device->ip_address, $device->port ?? 4370);
+            
+            if (!$result['success']) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => $result['message']
+                ]);
+                exit;
+            }
+            
+            // Process the records
+            $events = [];
+            foreach ($result['records'] as $record) {
+                // Get employee by user ID
+                $employee = $this->employeeModel->getEmployeeByFingerprint($record['user_id']);
+                
+                if ($employee) {
+                    // Create attendance record
+                    $attendanceData = [
+                        'employee_id' => $employee->id,
+                        'device_id' => $deviceId,
+                        'timestamp' => $record['timestamp'],
+                        'type' => $record['type'] ?? 'check-in'
+                    ];
+                    
+                    $attendanceId = $this->attendanceModel->create($attendanceData);
+                    
+                    if ($attendanceId) {
+                        // Format event for response
+                        $events[] = [
+                            'id' => $attendanceId,
+                            'employee_id' => $employee->id,
+                            'employee_name' => $employee->first_name . ' ' . $employee->last_name,
+                            'device_id' => $deviceId,
+                            'timestamp' => $record['timestamp'],
+                            'type' => $record['type'] ?? 'check-in'
+                        ];
+                    }
+                }
+            }
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Successfully monitored device',
+                'events' => $events
+            ]);
+        } catch (\Exception $e) {
+            error_log("Error in monitorDevice: " . $e->getMessage());
+            echo json_encode([
+                'success' => false,
+                'message' => 'Error: ' . $e->getMessage()
+            ]);
+        }
+        exit;
+    }
+
+    /**
+     * Start a live capture session
+     */
+    public function startLiveCapture() {
+        header('Content-Type: application/json');
+        
+        // Check if user is logged in
+        if (!Session::isLoggedIn()) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Authentication required'
+            ]);
+            exit;
+        }
+        
+        // Get parameters
+        $deviceId = isset($_POST['device_id']) ? $_POST['device_id'] : null;
+        $duration = isset($_POST['duration']) ? intval($_POST['duration']) : 60;
+        
+        if (!$deviceId) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Device ID is required'
+            ]);
+            exit;
+        }
+        
+        try {
+            // Get the device
+            $device = $this->deviceModel->getDeviceById($deviceId);
+            
+            if (!$device) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Device not found'
+                ]);
+                exit;
+            }
+            
+            // Log the start attempt
+            $logData = [
+                'device_id' => $deviceId,
+                'action' => 'start_live_capture',
+                'status' => 'info',
+                'message' => "Starting live capture for {$duration} seconds"
+            ];
+            $this->deviceModel->createLog($logData);
+            
+            // Store the capture session in the session
+            $_SESSION['live_capture_device'] = $deviceId;
+            $_SESSION['live_capture_start'] = time();
+            $timeout = time() + $duration;
+            $_SESSION['live_capture_timeout'] = $timeout;
+            
+            // Generate a unique capture ID
+            $captureId = uniqid('capture_');
+            $_SESSION['live_capture_id'] = $captureId;
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Live capture started',
+                'capture_id' => $captureId,
+                'device_id' => $deviceId,
+                'timeout' => $timeout,
+                'start_time' => date('Y-m-d H:i:s')
+            ]);
+        } catch (\Exception $e) {
+            error_log("Error in startLiveCapture: " . $e->getMessage());
+            echo json_encode([
+                'success' => false,
+                'message' => 'Error: ' . $e->getMessage()
+            ]);
+        }
+        exit;
+    }
+
+    /**
+     * Start a background live capture process
+     */
+    private function startBackgroundLiveCapture($device, $timeout) {
+        // Create a unique ID for this capture session
+        $captureId = uniqid('capture_');
+        
+        // Store the capture ID in the session
+        $_SESSION['live_capture_id'] = $captureId;
+        
+        // Create a background process to handle the live capture
+        $scriptPath = dirname(dirname(__DIR__)) . '/scripts/background_capture.php';
+        $cmd = "php {$scriptPath} {$device->id} {$device->ip_address} {$device->port} {$timeout} {$captureId} > /dev/null 2>&1 &";
+        
+        error_log("Starting background live capture: {$cmd}");
+        exec($cmd);
+    }
+
+    /**
+     * Check for live capture events
+     */
+    public function checkLiveCapture() {
+        header('Content-Type: application/json');
+        
+        // Check if user is logged in
+        if (!Session::isLoggedIn()) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Authentication required'
+            ]);
+            exit;
+        }
+        
+        // Get parameters
+        $deviceId = isset($_GET['device_id']) ? $_GET['device_id'] : null;
+        $lastCheck = isset($_GET['last_check']) ? $_GET['last_check'] : null;
+        
+        if (!$deviceId) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Device ID is required'
+            ]);
+            exit;
+        }
+        
+        try {
+            // Check if there's an active live capture session
+            $isActive = isset($_SESSION['live_capture_device']) && 
+                       $_SESSION['live_capture_device'] == $deviceId &&
+                       (time() - $_SESSION['live_capture_start']) < $_SESSION['live_capture_timeout'];
+            
+            // Get new attendance records since the last check
+            $newRecords = [];
+            if ($lastCheck) {
+                $newRecords = $this->attendanceModel->getAttendanceSince($lastCheck, $deviceId);
+            }
+            
+            // Get today's summary
+            $today = date('Y-m-d');
+            $summary = $this->attendanceModel->getAttendanceSummary($today);
+            
+            echo json_encode([
+                'success' => true,
+                'is_active' => $isActive,
+                'remaining_time' => $isActive ? $_SESSION['live_capture_timeout'] - (time() - $_SESSION['live_capture_start']) : 0,
+                'new_records' => $newRecords,
+                'last_check' => date('Y-m-d H:i:s'),
+                'summary' => [
+                    'present' => $summary->present ?? 0,
+                    'absent' => ($summary->total_employees ?? 0) - ($summary->present ?? 0),
+                    'late' => $summary->late ?? 0,
+                    'total' => $summary->total_employees ?? 0
+                ]
+            ]);
+        } catch (\Exception $e) {
+            error_log("Error in checkLiveCapture: " . $e->getMessage());
+            echo json_encode([
+                'success' => false,
+                'message' => 'Error: ' . $e->getMessage()
+            ]);
+        }
+        exit;
+    }
+
+    /**
+     * Stop a live capture session
+     */
+    public function stopLiveCapture() {
+        header('Content-Type: application/json');
+        
+        // Check if user is logged in
+        if (!Session::isLoggedIn()) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Authentication required'
+            ]);
+            exit;
+        }
+        
+        // Get parameters
+        $deviceId = isset($_GET['device_id']) ? $_GET['device_id'] : null;
+        
+        if (!$deviceId) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Device ID is required'
+            ]);
+            exit;
+        }
+        
+        try {
+            // Check if there's an active live capture session
+            if (isset($_SESSION['live_capture_device']) && $_SESSION['live_capture_device'] == $deviceId) {
+                // Log the stop attempt
+                $logData = [
+                    'device_id' => $deviceId,
+                    'action' => 'stop_live_capture',
+                    'status' => 'info',
+                    'message' => "Stopping live capture"
+                ];
+                $this->deviceModel->createLog($logData);
+                
+                // Clear the session variables
+                unset($_SESSION['live_capture_device']);
+                unset($_SESSION['live_capture_start']);
+                unset($_SESSION['live_capture_timeout']);
+                
+                // Try to kill the background process
+                if (isset($_SESSION['live_capture_id'])) {
+                    $captureId = $_SESSION['live_capture_id'];
+                    $cmd = "pkill -f 'background_capture.php.*{$captureId}'";
+                    exec($cmd);
+                    unset($_SESSION['live_capture_id']);
+                }
+                
+                echo json_encode([
+                    'success' => true,
+                    'message' => 'Live capture stopped'
+                ]);
+            } else {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'No active live capture session found'
+                ]);
+            }
+        } catch (\Exception $e) {
+            error_log("Error in stopLiveCapture: " . $e->getMessage());
+            echo json_encode([
+                'success' => false,
+                'message' => 'Error: ' . $e->getMessage()
+            ]);
+        }
+        exit;
+    }
+
+    public function debugPyZK() {
+        // This is a debug endpoint
+        header('Content-Type: application/json');
+        
+        $deviceId = isset($_GET['device_id']) ? $_GET['device_id'] : null;
+        
+        if (!$deviceId) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Device ID is required'
+            ]);
+            exit;
+        }
+        
+        $device = $this->deviceModel->getDeviceById($deviceId);
+        
+        if (!$device) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Device not found'
+            ]);
+            exit;
+        }
+        
+        // Test connection
+        $testResult = PyZK::testConnection($device->ip_address, $device->port);
+        
+        // Try to get real-time data
+        $realtimeResult = PyZK::getRealTimeAttendance($device->ip_address, $device->port);
+        
+        echo json_encode([
+            'success' => true,
+            'device' => [
+                'id' => $device->id,
+                'name' => $device->device_name,
+                'ip' => $device->ip_address,
+                'port' => $device->port
+            ],
+            'test_connection' => $testResult,
+            'realtime_data' => $realtimeResult,
+            'python_path' => PyZK::getScriptPath(),
+            'php_version' => phpversion(),
+            'os' => PHP_OS
+        ]);
+        exit;
+    }
+
+    /**
+     * Debug devices
+     */
+    public function debugDevices() {
+        // Check if user is logged in
+        if (!Session::isLoggedIn()) {
+            header('Location: /login');
+            exit;
+        }
+        
+        // Get all devices
+        $devices = $this->deviceModel->getAllDevices();
+        
+        // Pass the database connection for table structure
+        $db = $this->db;
+        
+        // Load the debug view
+        require_once __DIR__ . '/../../resources/views/debug_devices.php';
+    }
+
+    /**
+     * Debug database structure
+     */
+    public function debugDatabase() {
+        // Check if user is logged in
+        if (!Session::isLoggedIn()) {
+            header('Location: /login');
+            exit;
+        }
+        
+        header('Content-Type: application/json');
+        
+        try {
+            // Get devices table structure
+            $devicesColumns = $this->db->query("SHOW COLUMNS FROM devices")->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Get sample devices
+            $devices = $this->deviceModel->getAllDevices();
+            $sampleDevices = [];
+            foreach ($devices as $device) {
+                $sampleDevices[] = [
+                    'id' => $device->id,
+                    'name' => $device->name ?? null,
+                    'device_name' => $device->device_name ?? null,
+                    'ip_address' => $device->ip_address,
+                    'port' => $device->port,
+                    'status' => $device->status ?? null
+                ];
+            }
+            
+            echo json_encode([
+                'success' => true,
+                'devices_table' => [
+                    'columns' => $devicesColumns,
+                    'sample_data' => $sampleDevices
+                ],
+                'php_version' => phpversion(),
+                'server' => $_SERVER['SERVER_SOFTWARE']
+            ], JSON_PRETTY_PRINT);
+        } catch (Exception $e) {
+            echo json_encode([
+                'success' => false,
+                'error' => $e->getMessage()
+            ]);
+        }
+        exit;
+    }
+
+    /**
+     * Get today's attendance data for the table
+     */
+    public function getTodayAttendance() {
+        // Check if user is logged in
+        if (!Session::isLoggedIn()) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+            exit;
+        }
+        
+        try {
+            // Get today's date
+            $today = date('Y-m-d');
+            
+            // Get attendance records for today
+            $records = $this->attendanceModel->getAttendanceByDate($today);
+            
+            // Format the records for the table
+            $formattedRecords = [];
+            foreach ($records as $record) {
+                // Get employee name
+                $employee = $this->employeeModel->getEmployeeById($record->employee_id);
+                $employeeName = $employee ? ($employee->first_name . ' ' . $employee->last_name) : 'Unknown';
+                
+                // Get device name
+                $device = $this->deviceModel->getDeviceById($record->device_id);
+                $deviceName = $device ? ($device->device_name ?? $device->name ?? 'Device ' . $device->id) : 'Unknown';
+                
+                // Format the record
+                $formattedRecords[] = [
+                    'id' => $record->id,
+                    'employee_id' => $record->employee_id,
+                    'employee_name' => $employeeName,
+                    'device_id' => $record->device_id,
+                    'device_name' => $deviceName,
+                    'timestamp' => $record->timestamp,
+                    'type' => $record->type ?? 'check-in',
+                    'status' => $record->status ?? 'present'
+                ];
+            }
+            
+            // Get attendance summary
+            $summary = $this->attendanceModel->getAttendanceSummary($today);
+            
+            // Return the data
+            header('Content-Type: application/json');
+            echo json_encode([
+                'success' => true,
+                'records' => $formattedRecords,
+                'summary' => [
+                    'present' => $summary->present ?? 0,
+                    'absent' => ($summary->total_employees ?? 0) - ($summary->present ?? 0),
+                    'late' => $summary->late ?? 0,
+                    'total' => $summary->total_employees ?? 0
+                ]
+            ]);
+        } catch (\Exception $e) {
+            error_log("Error in getTodayAttendance: " . $e->getMessage());
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        }
+        exit;
     }
 } 
